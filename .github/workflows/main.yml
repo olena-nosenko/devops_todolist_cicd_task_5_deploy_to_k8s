@@ -8,12 +8,15 @@ on:
   pull_request:
     branches: ["main"]
 
+  workflow_dispatch:
+
 env:
   PythonVersion: 3.8
   DockerImageName: todoapp
 
 jobs:
   python-ci:
+    name: Python CI
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -63,6 +66,12 @@ jobs:
           name: helm-artifacts
           path: ${{ github.workspace }}/helm-charts
 
+      - name: Upload cluster config
+        uses: actions/upload-artifact@v4
+        with:
+          name: cluster-config
+          path: ${{ github.workspace }}/cluster.yml
+
   docker-ci:
     name: Build and Push Image
     runs-on: ubuntu-latest
@@ -90,10 +99,10 @@ jobs:
         tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DockerImageName }}:${{ github.sha }}
 
   helm-ci:
+    name: Helm CI
     runs-on: ubuntu-latest
     needs: python-ci
     if: github.ref_name == 'main'
-    name: Helm CI
     steps:
 
     - uses: actions/download-artifact@v4
@@ -118,3 +127,22 @@ jobs:
       with:
         name: helm-package
         path: ./*.tgz
+
+  deploy-helm-development:
+    name: Deploy Helm to Development
+    uses: ./.github/workflows/deployment-workflow.yml
+    needs: [helm-ci, docker-ci]
+    secrets: inherit
+    with:
+      environment: development
+      version: ${{ github.sha }}
+
+  deploy-helm-staging:
+    name: Deploy Helm to Staging
+    uses: ./.github/workflows/deployment-workflow.yml
+    needs: deploy-helm-development
+    secrets: inherit
+    with:
+      environment: staging
+      version: ${{ github.sha }}
+      helm-values-path: ./todoapp/values/stg.yml
